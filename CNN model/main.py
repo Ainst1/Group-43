@@ -19,19 +19,6 @@ def binary_thresholding(img):
     _, thresh_binary = cv2.threshold(img_array, 128, 255, cv2.THRESH_BINARY)
     
     return thresh_binary
-
-train_dir="train/train"
-transform = transforms.Compose(
-    [transforms.Resize(255),
-     transforms.Lambda(binary_thresholding),
-     transforms.ToTensor()])
-
-trainset = datasets.ImageFolder(train_dir, transform=transform)
-
-trainloader = torch.utils.data.DataLoader(trainset,
-                                         batch_size=32,
-                                         shuffle=True)
-
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
@@ -52,61 +39,72 @@ class Net(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+if __name__ == "__main__":
+    train_dir="train/train"
+    transform = transforms.Compose(
+        [transforms.Resize(255),
+        transforms.Lambda(binary_thresholding),
+        transforms.ToTensor()])
 
+    trainset = datasets.ImageFolder(train_dir, transform=transform)
 
-net = Net()
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
-net.to(device)
+    trainloader = torch.utils.data.DataLoader(trainset,
+                                            batch_size=32,
+                                            shuffle=True)
 
-checkpoint_path = "cnn_rules.pt"
-loaded_checkpoint = False
-if os.path.exists(checkpoint_path):
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    net.load_state_dict(checkpoint["model_state_dict"])
-    loaded_checkpoint = True
+    net = Net()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
+    net.to(device)
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    checkpoint_path = "cnn_rules.pt"
+    loaded_checkpoint = False
+    if os.path.exists(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        net.load_state_dict(checkpoint["model_state_dict"])
+        loaded_checkpoint = True
 
-if not loaded_checkpoint:
-    for epoch in range(num_epochs):
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            inputs, labels = data[0].to(device), data[1].to(device)
+    if not loaded_checkpoint:
+        for epoch in range(num_epochs):
 
-            optimizer.zero_grad()
+            running_loss = 0.0
+            for i, data in enumerate(trainloader, 0):
+                inputs, labels = data[0].to(device), data[1].to(device)
 
-            outputs = net(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+                optimizer.zero_grad()
 
-            running_loss += loss.item()
-            if i % 2000 == 1999:    
-                print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
-                running_loss = 0.0
+                outputs = net(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
 
-    print('Finished Training')
-    checkpoint = {"model_state_dict": net.state_dict(), "class_to_idx": trainset.class_to_idx}
-    torch.save(checkpoint, checkpoint_path)
-val_dir="val/val"
+                running_loss += loss.item()
+                if i % 2000 == 1999:    
+                    print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
+                    running_loss = 0.0
 
-valset = datasets.ImageFolder(val_dir, 
-                               transform=transform)
+        print('Finished Training')
+        checkpoint = {"model_state_dict": net.state_dict(), "class_to_idx": trainset.class_to_idx}
+        torch.save(checkpoint, checkpoint_path)
+    val_dir="val/val"
 
-valloader = torch.utils.data.DataLoader(valset,
-                                         batch_size=32,
-                                         shuffle=True)
-correct = 0
-total = 0
-with torch.no_grad():
-    for data in valloader:
-        images, labels = data[0].to(device), data[1].to(device)
-        outputs = net(images)
-        _, predicted = torch.max(outputs, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
+    valset = datasets.ImageFolder(val_dir, 
+                                transform=transform)
 
-print(f'Accuracy of the network on the 10000 test images: {100 * correct // total} %')
+    valloader = torch.utils.data.DataLoader(valset,
+                                            batch_size=32,
+                                            shuffle=True)
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for data in valloader:
+            images, labels = data[0].to(device), data[1].to(device)
+            outputs = net(images)
+            _, predicted = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    print(f'Accuracy of the network on validation images: {100 * correct // total} %')
