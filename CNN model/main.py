@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 from torchvision import datasets
 import os
 
-num_epochs = 10
+num_epochs = 20
 
 class Net(nn.Module):
     def __init__(self):
@@ -19,7 +19,7 @@ class Net(nn.Module):
         self.conv3 = nn.Conv2d(32, 64, 3, padding=1)
         self.bn3 = nn.BatchNorm2d(64)
         self.fc1 = nn.Linear(64 * 4 * 4, 512) 
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(0.25)
         self.fc2 = nn.Linear(512, 256)          
         self.fc3 = nn.Linear(256, 10)
 
@@ -48,8 +48,10 @@ if __name__ == "__main__":
     trainset = datasets.ImageFolder(train_dir, transform=train_transform)
 
     trainloader = torch.utils.data.DataLoader(trainset,
-                                            batch_size=32,
-                                            shuffle=True)
+                                            batch_size=64,
+                                            shuffle=True,
+                                            num_workers=4,
+                                            pin_memory=True)
 
     net = Net()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -65,8 +67,10 @@ if __name__ == "__main__":
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(net.parameters(), lr=0.001)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
     if not loaded_checkpoint:
+        net.train()
         for epoch in range(num_epochs):
 
             running_loss = 0.0
@@ -79,12 +83,12 @@ if __name__ == "__main__":
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
-
+                
                 running_loss += loss.item()
                 if i % 2000 == 1999:    
                     print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
                     running_loss = 0.0
-
+            scheduler.step()
         print('Finished Training')
         checkpoint = {"model_state_dict": net.state_dict(), "class_to_idx": trainset.class_to_idx}
         torch.save(checkpoint, checkpoint_path)
@@ -99,10 +103,13 @@ if __name__ == "__main__":
                                 transform=val_transform)
 
     valloader = torch.utils.data.DataLoader(valset,
-                                            batch_size=32,
-                                            shuffle=True)
+                                            batch_size=64,
+                                            shuffle=True,
+                                            num_workers=4,
+                                            pin_memory=True)
     correct = 0
     total = 0
+    net.eval()
     with torch.no_grad():
         for data in valloader:
             images, labels = data[0].to(device), data[1].to(device)
