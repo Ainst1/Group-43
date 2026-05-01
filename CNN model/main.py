@@ -6,8 +6,9 @@ import torchvision.transforms as transforms
 from torchvision import datasets
 import os
 
-num_epochs = 20
-
+NUM_EPOCHS = 20
+LOAD_CHECKPOINT = True
+LOAD_CHECKPOINT_PATH = "CNN model/checkpoints/cnn_rules_5_best.pt"
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
@@ -22,7 +23,10 @@ class Net(nn.Module):
         self.dropout = nn.Dropout(0.25)
         self.fc2 = nn.Linear(512, 256)          
         self.fc3 = nn.Linear(256, 10)
-
+        for m in self.modules():
+                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+    
     def forward(self, x):
             x = self.pool(F.relu(self.bn1(self.conv1(x))))
             x = self.pool(F.relu(self.bn2(self.conv2(x))))
@@ -40,8 +44,8 @@ if __name__ == "__main__":
     train_transform = transforms.Compose([
         transforms.Grayscale(num_output_channels=1), 
         transforms.Resize((28, 28)),
-        transforms.RandomRotation(15),
-        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+        transforms.RandomRotation(10),
+        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
 ])
@@ -52,46 +56,6 @@ if __name__ == "__main__":
                                             shuffle=True,
                                             num_workers=4,
                                             pin_memory=True)
-
-    net = Net()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)
-    net.to(device)
-    num_checks = len([f for f in os.listdir("CNN model/checkpoints/")])
-    checkpoint_path = f"CNN model/checkpoints/cnn_rules_{num_checks}.pt"
-    loaded_checkpoint = False
-    if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        net.load_state_dict(checkpoint["model_state_dict"])
-        loaded_checkpoint = True
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(net.parameters(), lr=0.001)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-
-    if not loaded_checkpoint:
-        net.train()
-        for epoch in range(num_epochs):
-
-            running_loss = 0.0
-            for i, data in enumerate(trainloader, 0):
-                inputs, labels = data[0].to(device), data[1].to(device)
-
-                optimizer.zero_grad()
-
-                outputs = net(inputs)
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-                
-                running_loss += loss.item()
-                if i % 2000 == 1999:    
-                    print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
-                    running_loss = 0.0
-            scheduler.step()
-        print('Finished Training')
-        checkpoint = {"model_state_dict": net.state_dict(), "class_to_idx": trainset.class_to_idx}
-        torch.save(checkpoint, checkpoint_path)
     val_dir="val/val"
     val_transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
@@ -107,6 +71,68 @@ if __name__ == "__main__":
                                             shuffle=True,
                                             num_workers=4,
                                             pin_memory=True)
+    net = Net()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
+    net.to(device)
+    num_checks = len([f for f in os.listdir("CNN model/checkpoints/")])
+    checkpoint_path = f"CNN model/checkpoints/cnn_rules_{num_checks}.pt"
+    #best_checkpoint_path = f"CNN model/checkpoints/cnn_rules_{num_checks}_best.pt"
+    best_checkpoint_path = f"CNN model/checkpoints/cnn_rules_5_best.pt"
+    if LOAD_CHECKPOINT:
+        checkpoint = torch.load(LOAD_CHECKPOINT_PATH, map_location=device)
+        net.load_state_dict(checkpoint["model_state_dict"])
+        print(f"Loaded {LOAD_CHECKPOINT_PATH.split("/")[-1]} checkpoint")
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, factor=0.5)
+    if LOAD_CHECKPOINT and os.path.isfile(f"CNN model/checkpoint_scores/{best_checkpoint_path.split("/")[-1].split(".")[0]}.txt"):
+         print("found best val loss score file")
+         with open(f"CNN model/checkpoint_scores/{best_checkpoint_path.split("/")[-1].split(".")[0]}.txt","r") as file:
+            best_val_loss = float(file.readlines()[0])
+    else:
+        print("didn't find best val loss score file")
+        best_val_loss = float('inf')
+    for epoch in range(NUM_EPOCHS):
+        net.train()
+        running_loss = 0.0
+        for inputs, labels in trainloader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            optimizer.zero_grad()
+            outputs = net(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+
+        net.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for images, labels in valloader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = net(images)
+                loss = criterion(outputs, labels)
+                val_loss += loss.item()
+
+        avg_val_loss = val_loss / len(valloader)
+        print(f"Epoch {epoch+1} Val Loss: {avg_val_loss:.4f}")
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save({"model_state_dict": net.state_dict()}, best_checkpoint_path)
+            with open(f"CNN model/checkpoint_scores/{best_checkpoint_path.split("/")[-1].split(".")[0]}.txt","w") as file:
+                 file.write(str(best_val_loss))
+            print(f"Epoch {epoch+1}: New best model saved! Loss: {avg_val_loss:.4f}")
+
+        scheduler.step(avg_val_loss)
+
+    print('Finished Training')
+
+    #checkpoint = {"model_state_dict": net.state_dict(), "class_to_idx": trainset.class_to_idx}
+    #torch.save(checkpoint, checkpoint_path)
+    if LOAD_CHECKPOINT:
+        checkpoint = torch.load(LOAD_CHECKPOINT_PATH, map_location=device)
+        net.load_state_dict(checkpoint["model_state_dict"])
     correct = 0
     total = 0
     net.eval()
