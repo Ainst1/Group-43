@@ -4,49 +4,48 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision.transforms as transforms
 from torchvision import datasets
-import cv2
-import numpy as np
 import os
 
 num_epochs = 10
 
-def binary_thresholding(img):
-    img_array = np.array(img)
-    
-    if len(img_array.shape) == 3:
-        img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-
-    _, thresh_binary = cv2.threshold(img_array, 128, 255, cv2.THRESH_BINARY)
-    
-    return thresh_binary
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(1, 16, 5) 
+        self.conv1 = nn.Conv2d(1, 16, 5)
+        self.bn1 = nn.BatchNorm2d(16)
         self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(16, 32, 5) 
+        self.conv2 = nn.Conv2d(16, 32, 5)
+        self.bn2 = nn.BatchNorm2d(32)
         self.conv3 = nn.Conv2d(32, 64, 3, padding=1)
-        self.fc1 = nn.Linear(64 * 60 * 60, 512) 
+        self.bn3 = nn.BatchNorm2d(64)
+        self.fc1 = nn.Linear(64 * 4 * 4, 512) 
+        self.dropout = nn.Dropout(0.5)
         self.fc2 = nn.Linear(512, 256)          
         self.fc3 = nn.Linear(256, 10)
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = F.relu(self.conv3(x)) # Using the new layer
-        x = torch.flatten(x, 1) 
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
+            x = self.pool(F.relu(self.bn1(self.conv1(x))))
+            x = self.pool(F.relu(self.bn2(self.conv2(x))))
+            x = F.relu(self.bn3(self.conv3(x))) 
+            x = torch.flatten(x, 1) 
+            
+            x = F.relu(self.fc1(x))
+            x = self.dropout(x) 
+            x = F.relu(self.fc2(x))
+            x = self.dropout(x)
+            x = self.fc3(x)
+            return x
 if __name__ == "__main__":
     train_dir="train/train"
-    transform = transforms.Compose(
-        [transforms.Resize(255),
-        transforms.Lambda(binary_thresholding),
-        transforms.ToTensor()])
-
-    trainset = datasets.ImageFolder(train_dir, transform=transform)
+    train_transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=1), 
+        transforms.Resize((28, 28)),
+        transforms.RandomRotation(15),
+        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5,), (0.5,))
+])
+    trainset = datasets.ImageFolder(train_dir, transform=train_transform)
 
     trainloader = torch.utils.data.DataLoader(trainset,
                                             batch_size=32,
@@ -56,8 +55,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
     net.to(device)
-
-    checkpoint_path = "cnn_rules.pt"
+    num_checks = len([f for f in os.listdir("CNN model/checkpoints/")])
+    checkpoint_path = f"CNN model/checkpoints/cnn_rules_{num_checks}.pt"
     loaded_checkpoint = False
     if os.path.exists(checkpoint_path):
         checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -65,7 +64,7 @@ if __name__ == "__main__":
         loaded_checkpoint = True
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.Adam(net.parameters(), lr=0.001)
 
     if not loaded_checkpoint:
         for epoch in range(num_epochs):
@@ -90,9 +89,14 @@ if __name__ == "__main__":
         checkpoint = {"model_state_dict": net.state_dict(), "class_to_idx": trainset.class_to_idx}
         torch.save(checkpoint, checkpoint_path)
     val_dir="val/val"
-
+    val_transform = transforms.Compose([
+    transforms.Grayscale(num_output_channels=1),
+    transforms.Resize((28, 28)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+    ])
     valset = datasets.ImageFolder(val_dir, 
-                                transform=transform)
+                                transform=val_transform)
 
     valloader = torch.utils.data.DataLoader(valset,
                                             batch_size=32,
