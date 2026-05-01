@@ -6,6 +6,7 @@ import torchvision.transforms as transforms
 from torchvision import datasets
 import cv2
 import numpy as np
+import os
 
 num_epochs = 10
 
@@ -58,28 +59,38 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 net.to(device)
 
+checkpoint_path = "cnn_rules.pt"
+loaded_checkpoint = False
+if os.path.exists(checkpoint_path):
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    net.load_state_dict(checkpoint["model_state_dict"])
+    loaded_checkpoint = True
+
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
-for epoch in range(num_epochs):
+if not loaded_checkpoint:
+    for epoch in range(num_epochs):
 
-    running_loss = 0.0
-    for i, data in enumerate(trainloader, 0):
-        inputs, labels = data[0].to(device), data[1].to(device)
+        running_loss = 0.0
+        for i, data in enumerate(trainloader, 0):
+            inputs, labels = data[0].to(device), data[1].to(device)
 
-        optimizer.zero_grad()
+            optimizer.zero_grad()
 
-        outputs = net(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+            outputs = net(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
 
-        running_loss += loss.item()
-        if i % 2000 == 1999:    
-            print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
-            running_loss = 0.0
+            running_loss += loss.item()
+            if i % 2000 == 1999:    
+                print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
+                running_loss = 0.0
 
-print('Finished Training')
+    print('Finished Training')
+    checkpoint = {"model_state_dict": net.state_dict(), "class_to_idx": trainset.class_to_idx}
+    torch.save(checkpoint, checkpoint_path)
 val_dir="val/val"
 
 valset = datasets.ImageFolder(val_dir, 
