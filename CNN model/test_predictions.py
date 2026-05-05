@@ -14,7 +14,7 @@ transform = transforms.Compose([
 ])
 
 TEST_DIR = "test/test"
-CHECKPOINT_PATH = "CNN model/checkpoints/cnn_rules_5_best.pt"
+CHECKPOINT_PATH = "CNN model/checkpoints/cnn_rules_6_best.pt"
 num_csv = len([f for f in os.listdir("CNN model/predictions/")])
 OUTPUT_CSV = f"CNN model/predictions/my_submission_{num_csv}.csv"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

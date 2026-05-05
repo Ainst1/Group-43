@@ -7,7 +7,7 @@ from torchvision import datasets
 import os
 
 NUM_EPOCHS = 20
-LOAD_CHECKPOINT = True
+LOAD_CHECKPOINT = False
 LOAD_CHECKPOINT_PATH = "CNN model/checkpoints/cnn_rules_5_best.pt"
 class Net(nn.Module):
     def __init__(self):
@@ -19,10 +19,9 @@ class Net(nn.Module):
         self.bn2 = nn.BatchNorm2d(32)
         self.conv3 = nn.Conv2d(32, 64, 3, padding=1)
         self.bn3 = nn.BatchNorm2d(64)
-        self.fc1 = nn.Linear(64 * 4 * 4, 512) 
-        self.dropout = nn.Dropout(0.25)
-        self.fc2 = nn.Linear(512, 256)          
-        self.fc3 = nn.Linear(256, 10)
+        self.fc1 = nn.Linear(64 * 4 * 4, 128) 
+        self.dropout = nn.Dropout(0.5)
+        self.fc2 = nn.Linear(128, 10)          
         for m in self.modules():
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
                     nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -36,8 +35,6 @@ class Net(nn.Module):
             x = F.relu(self.fc1(x))
             x = self.dropout(x) 
             x = F.relu(self.fc2(x))
-            x = self.dropout(x)
-            x = self.fc3(x)
             return x
 if __name__ == "__main__":
     train_dir="train/train"
@@ -47,7 +44,8 @@ if __name__ == "__main__":
         transforms.RandomRotation(10),
         transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
+        transforms.Normalize((0.5,), (0.5,)),
+        transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3))
 ])
     trainset = datasets.ImageFolder(train_dir, transform=train_transform)
 
@@ -77,22 +75,24 @@ if __name__ == "__main__":
     net.to(device)
     num_checks = len([f for f in os.listdir("CNN model/checkpoints/")])
     checkpoint_path = f"CNN model/checkpoints/cnn_rules_{num_checks}.pt"
-    #best_checkpoint_path = f"CNN model/checkpoints/cnn_rules_{num_checks}_best.pt"
-    best_checkpoint_path = f"CNN model/checkpoints/cnn_rules_5_best.pt"
+    best_checkpoint_path = f"CNN model/checkpoints/cnn_rules_{num_checks}_best.pt"
+    #best_checkpoint_path = f"CNN model/checkpoints/cnn_rules_5_best.pt"
     if LOAD_CHECKPOINT:
         checkpoint = torch.load(LOAD_CHECKPOINT_PATH, map_location=device)
         net.load_state_dict(checkpoint["model_state_dict"])
         print(f"Loaded {LOAD_CHECKPOINT_PATH.split("/")[-1]} checkpoint")
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, factor=0.5)
+    optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=1e-4)
+    steps_per_epoch = len(trainloader)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
     if LOAD_CHECKPOINT and os.path.isfile(f"CNN model/checkpoint_scores/{best_checkpoint_path.split("/")[-1].split(".")[0]}.txt"):
          print("found best val loss score file")
          with open(f"CNN model/checkpoint_scores/{best_checkpoint_path.split("/")[-1].split(".")[0]}.txt","r") as file:
             best_val_loss = float(file.readlines()[0])
     else:
-        print("didn't find best val loss score file")
+        if LOAD_CHECKPOINT:
+            print("didn't find best val loss score file")
         best_val_loss = float('inf')
     for epoch in range(NUM_EPOCHS):
         net.train()
@@ -116,6 +116,7 @@ if __name__ == "__main__":
                 val_loss += loss.item()
 
         avg_val_loss = val_loss / len(valloader)
+        scheduler.step(avg_val_loss)
         print(f"Epoch {epoch+1} Val Loss: {avg_val_loss:.4f}")
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
@@ -124,7 +125,6 @@ if __name__ == "__main__":
                  file.write(str(best_val_loss))
             print(f"Epoch {epoch+1}: New best model saved! Loss: {avg_val_loss:.4f}")
 
-        scheduler.step(avg_val_loss)
 
     print('Finished Training')
 
@@ -144,4 +144,4 @@ if __name__ == "__main__":
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-    print(f'Accuracy of the network on validation images: {100 * correct // total} %')
+    print(f'Accuracy of the network on validation images: {(100 * correct / total):.7f} %')
