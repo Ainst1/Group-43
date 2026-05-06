@@ -5,6 +5,17 @@ import os
 import csv
 from pathlib import Path
 from main import Net
+import torch.nn.functional as F
+
+tta_transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=1), 
+        transforms.Resize((28, 28)),
+        transforms.RandomRotation(10),
+        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5,), (0.5,)),
+        transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3))
+])
 
 transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
@@ -12,7 +23,7 @@ transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
 ])
-
+TTA_STEPS = 10
 TEST_DIR = "test/test"
 CHECKPOINT_PATH = "CNN model/checkpoints/cnn_rules_16_best.pt"
 num_csv = len([f for f in os.listdir("CNN model/predictions/")])
@@ -38,9 +49,14 @@ with torch.no_grad():
         img_path = os.path.join(TEST_DIR, filename)
         img = Image.open(img_path).convert('RGB')
         img_tensor = transform(img).unsqueeze(0).to(device) 
-        
-        outputs = net(img_tensor)
-        _, predicted = torch.max(outputs, 1)
+        probs = F.softmax(net(img_tensor), dim=1)
+
+        for _ in range(TTA_STEPS - 1):
+            img_tensor = tta_transform(img).unsqueeze(0).to(device)
+            probs += F.softmax(net(img_tensor), dim=1)
+
+        probs /= TTA_STEPS
+        _, predicted = torch.max(probs, 1)
         category = predicted.item()
         
         results.append([image_id, category])

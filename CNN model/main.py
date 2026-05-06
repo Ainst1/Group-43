@@ -6,8 +6,9 @@ import torchvision.transforms as transforms
 from torchvision import datasets
 import os
 
-NUM_EPOCHS = 20
+NUM_EPOCHS = 50
 LOAD_CHECKPOINT = False
+NUM_ALLOWED_NO_INCREASE = 10
 LOAD_CHECKPOINT_PATH = "CNN model/checkpoints/cnn_rules_5_best.pt"
 class Net(nn.Module):
     def __init__(self):
@@ -34,7 +35,7 @@ class Net(nn.Module):
             
             x = F.relu(self.fc1(x))
             x = self.dropout(x) 
-            x = F.relu(self.fc2(x))
+            x = self.fc2(x)
             return x
 if __name__ == "__main__":
     train_dir="train/train"
@@ -82,10 +83,11 @@ if __name__ == "__main__":
         net.load_state_dict(checkpoint["model_state_dict"])
         print(f"Loaded {LOAD_CHECKPOINT_PATH.split("/")[-1]} checkpoint")
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
     optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=1e-4)
     steps_per_epoch = len(trainloader)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+    no_increase = 0
     if LOAD_CHECKPOINT and os.path.isfile(f"CNN model/checkpoint_scores/{best_checkpoint_path.split("/")[-1].split(".")[0]}.txt"):
          print("found best val loss score file")
          with open(f"CNN model/checkpoint_scores/{best_checkpoint_path.split("/")[-1].split(".")[0]}.txt","r") as file:
@@ -117,13 +119,18 @@ if __name__ == "__main__":
 
         avg_val_loss = val_loss / len(valloader)
         scheduler.step(avg_val_loss)
-        print(f"Epoch {epoch+1} Val Loss: {avg_val_loss:.4f}")
+        print(f"Epoch {epoch+1} Val Loss: {avg_val_loss:.4f}, No improvement in {no_increase+1} epochs")
+        no_increase+=1
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
+            no_increase=0
             torch.save({"model_state_dict": net.state_dict()}, best_checkpoint_path)
             with open(f"CNN model/checkpoint_scores/{best_checkpoint_path.split("/")[-1].split(".")[0]}.txt","w") as file:
                  file.write(str(best_val_loss))
             print(f"Epoch {epoch+1}: New best model saved! Loss: {avg_val_loss:.4f}")
+        if no_increase>=NUM_ALLOWED_NO_INCREASE:
+            print(f"no more improvement seen in {NUM_ALLOWED_NO_INCREASE} epochs")
+            break
 
 
     print('Finished Training')
@@ -132,6 +139,9 @@ if __name__ == "__main__":
     #torch.save(checkpoint, checkpoint_path)
     if LOAD_CHECKPOINT:
         checkpoint = torch.load(LOAD_CHECKPOINT_PATH, map_location=device)
+        net.load_state_dict(checkpoint["model_state_dict"])
+    else:
+        checkpoint = torch.load(best_checkpoint_path, map_location=device)
         net.load_state_dict(checkpoint["model_state_dict"])
     correct = 0
     total = 0
