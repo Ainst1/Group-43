@@ -8,8 +8,8 @@ from pathlib import Path
 from main import Net 
 
 CHECKPOINT_PATHS = [
-    "CNN model/checkpoints/cnn_rules_15_best.pt",
-    "CNN model/checkpoints/cnn_rules_16_best.pt",
+    "CNN model/checkpoints/cnn_rules_17_best.pt",
+    "CNN model/checkpoints/cnn_rules_18_best.pt",
 ]
 TTA_STEPS = 10
 TEST_DIR = "test/test"
@@ -22,7 +22,7 @@ tta_transform = transforms.Compose([
         transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,)),
-        transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3))
+        #transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3))
 ])
 transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),

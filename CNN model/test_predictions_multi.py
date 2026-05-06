@@ -8,8 +8,8 @@ from pathlib import Path
 from main import Net 
 
 CHECKPOINT_PATHS = [
-    "CNN model/checkpoints/cnn_rules_8_best.pt",
-    "CNN model/checkpoints/cnn_rules_7_best.pt",
+    "CNN model/checkpoints/cnn_rules_17_best.pt",
+    "CNN model/checkpoints/cnn_rules_18_best.pt",
 ]
 
 TEST_DIR = "test/test"

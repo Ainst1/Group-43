@@ -14,7 +14,7 @@ tta_transform = transforms.Compose([
         transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,)),
-        transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3))
+        #transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3))
 ])
 
 transform = transforms.Compose([
@@ -25,7 +25,7 @@ transform = transforms.Compose([
 ])
 TTA_STEPS = 10
 TEST_DIR = "test/test"
-CHECKPOINT_PATH = "CNN model/checkpoints/cnn_rules_16_best.pt"
+CHECKPOINT_PATH = "CNN model/checkpoints/cnn_rules_18_best.pt"
 num_csv = len([f for f in os.listdir("CNN model/predictions/")])
 OUTPUT_CSV = f"CNN model/predictions/my_submission_{num_csv}.csv"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
